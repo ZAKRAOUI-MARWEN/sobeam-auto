@@ -1,0 +1,60 @@
+
+
+version: '3.1' 
+services:
+
+
+  sobeam:
+      restart: always
+      image: "thingsboard/tb-postgres:${SOBEAMVERSION}"
+      ports:
+        - "1883:1883"
+        - "7070:7070"
+        - "5683-5688:5683-5688/udp"
+        - "1620:1620/udp"
+      environment:
+        TB_QUEUE_TYPE: in-memory
+        SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/${DBNAME}" 
+        SPRING_DATASOURCE_USERNAME: ${DBUSER}
+        SPRING_DATASOURCE_PASSWORD: ${DBPASS}
+      volumes:
+        - ~/.sobeam-data:/data
+        - ~/.sobeam-logs:/var/log/thingsboard
+      networks:
+        - sobeam_relay
+
+  nginx:
+    image: "nginx:1.27.3"      
+    restart: always
+    volumes:
+      - ~/.sobeam-proxy/nginx:/etc/nginx/conf.d
+      - ~/.sobeam-proxy/certbot/conf:/etc/letsencrypt:ro
+      - ~/.sobeam-proxy/certbot/www:/var/www/certbot:ro
+    ports:
+      - "80:80" # dont remove this must be exposed for certbot certificat generation
+      - "443:443" # allow you to access sobeam service at 9090 through 443 with ssl 
+    networks:
+      - sobeam_relay
+
+  postgres:
+    restart: always
+    image: "postgres:16"
+    environment:
+      POSTGRES_DB: ${DBNAME}
+      POSTGRES_USER: ${DBUSER}
+      POSTGRES_PASSWORD: ${DBPASS}
+    volumes:
+      - ~/.sobeam-postgres:/var/lib/postgresql/data
+    networks:
+      - sobeam_relay
+
+  certbot:
+      image: certbot/certbot
+      volumes:
+        - ~/.sobeam-proxy/certbot/conf:/etc/letsencrypt:rw
+        - ~/.sobeam-proxy/certbot/www:/var/www/certbot:rw
+      entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"  # Renew certificates every 12 hours
+
+networks:
+  sobeam_relay:
+    driver: bridge
